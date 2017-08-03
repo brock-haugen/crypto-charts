@@ -41,7 +41,7 @@
   // get the historical candle data
   // format is MTS, OPEN, CLOSE, HIGH, LOW, VOLUME
   var getCandles = function (ticker, callback) {
-    return request(`${config.url}/candles/trade:6h:t${ticker.toUpperCase()}/hist`, callback)
+    return request(`${config.url}/candles/trade:1m:t${ticker.toUpperCase()}/hist`, callback)
   }
 
   // compute the average of a set of numbers
@@ -62,56 +62,24 @@
     return Math.sqrt(avgSquareDiff)
   }
 
-  // compute the Keltner channel
-  var keltnerChannel = function (close, high, low) {
-    return average([close, high, low])
-  }
-
-  // compute the Simple Moving Average
-  var simpleMovingAverage = function (data) {
-    return data.slice(config.N).map(function (d, i) {
-      return average(data.slice(i, config.N + i))
-    })
-  }
-
-  // compute Bollinger Band
-  var bollingerBands = function (data, N, K) {
-    N = N || config.N
-    K = K || config.K
-    return data.slice(N - 1).map((d, i) => {
-      var range = data.slice(i, N + i)
+  // compute Bollinger Bands
+  var bollingerBands = function (prices, timestamps) {
+    return prices.slice(0, -(config.N - 1)).map((d, i) => {
+      var range = prices.slice(i, config.N + i)
       var avg = average(range)
-      var std = standardDeviation(range)
-      return [
-        avg + K * std,
-        avg - K * std
-      ]
+      var std = config.K * standardDeviation(range)
+      return {
+        actual: range.pop(),
+        high: avg + std,
+        mid: avg,
+        low: avg - std,
+        timestamp: timestamps[i]
+      }
     })
-  }
-
-  // compute Bollinger Band width
-  var bollingerBandWidth = function (data) {
-    return data.map(d => d[0] - d[1])
   }
 
   // create DOM chart
-  var tickerChart = function (ticker, keltner, bollinger, bandWidths) {
-    var minLength = Math.min(keltner.length, bollinger.length, bandWidths.length, config.maxPoints)
-    var dateLabels = Array(minLength).fill(0).map(function (d, i) {
-      return new Date(Date.now() - 24 * 60 * 60 * 1000 * i / 4).toDateString()
-    }).reverse()
-
-    keltner = keltner.slice(-minLength)
-    bollinger = bollinger.slice(-minLength)
-    bandWidths = bandWidths.slice(-minLength)
-
-    var colors = [
-      'rgb(255, 92, 138)',
-      'rgb(138, 92, 255)',
-      'rgb(138, 92, 255)',
-      'rgb(255, 138, 92)'
-    ]
-
+  var tickerChart = function (ticker, bands) {
     var container = document.createElement('div')
     container.style.width = Math.max(document.body.scrollWidth / 2, 650)
     container.style.display = 'inline-block'
@@ -120,6 +88,8 @@
     container.appendChild(canvas)
     document.body.appendChild(container)
 
+    var dateLabels = bands.map(b => new Date(b.timestamp).toLocaleString())
+
     var ctx = document.getElementById(canvas.id).getContext('2d')
     new Chart(ctx, {
       type: 'bar',
@@ -127,28 +97,34 @@
         labels: dateLabels,
         datasets: [{
           type: 'line',
-          label: 'Keltner Channel',
+          label: 'Actual',
           backgroundColor: 'rgba(0, 0, 0, 0)',
-          borderColor: colors[0],
-          data: keltner
+          borderColor: 'lime',
+          data: bands.map(b => b.actual)
         }, {
           type: 'line',
-          label: 'Bollinger Upper Belt',
+          label: 'Mid BB',
           backgroundColor: 'rgba(0, 0, 0, 0)',
-          borderColor: colors[1],
-          data: bollinger.map(function (b) { return b[0] })
+          borderColor: 'red',
+          data: bands.map(b => b.mid)
         }, {
           type: 'line',
-          label: 'Bollinger Lower Belt',
+          label: 'Upper BB',
           backgroundColor: 'rgba(0, 0, 0, 0)',
-          borderColor: colors[2],
-          data: bollinger.map(function (b) { return b[1] })
+          borderColor: 'blue',
+          data: bands.map(b => b.high)
         }, {
           type: 'line',
-          label: 'Bollinger Band Width',
-          backgroundColor: colors[3],
-          borderColor: colors[3],
-          data: bandWidths
+          label: 'Lower BB',
+          backgroundColor: 'rgba(0, 0, 0, 0)',
+          borderColor: 'blue',
+          data: bands.map(b => b.low)
+        // }, {
+        //   type: 'line',
+        //   label: 'BB Width',
+        //   backgroundColor: 'orange',
+        //   borderColor: 'orange',
+        //   data: bands.map(b => b.high - b.low)
         }]
       },
       options: {
@@ -162,12 +138,11 @@
 
   config.tickers.forEach(t => {
     getCandles(t, function (candles) {
-      var keltner = candles.map(function (c) {
-        return keltnerChannel.apply(this, c.slice(2, 5))
-      })
-      var bollingers = bollingerBands(keltner)
-      var bandWidths = bollingerBandWidth(bollingers)
-      tickerChart(t, keltner, bollingers, bandWidths)
+      var prices = candles.map(c => average(c.slice(1, 5)))
+      var timestamps = candles.map(c => c[0])
+      var bollingers = bollingerBands(prices, timestamps)
+      bollingers.reverse()
+      tickerChart(t, bollingers)
     })
   })
 })()
