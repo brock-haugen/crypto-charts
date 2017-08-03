@@ -41,7 +41,7 @@
   // get the historical candle data
   // format is MTS, OPEN, CLOSE, HIGH, LOW, VOLUME
   var getCandles = function (ticker, callback) {
-    return request(`${config.url}/candles/trade:1m:t${ticker.toUpperCase()}/hist`, callback)
+    return request(`${config.url}/candles/trade:5m:t${ticker.toUpperCase()}/hist`, callback)
   }
 
   // compute the average of a set of numbers
